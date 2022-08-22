@@ -15,12 +15,14 @@ getSampleCohortDefintionSet <- function() {
   sampleCohorts <- CohortGenerator::createEmptyCohortDefinitionSet()
   eunomiaCohorts <- CohortGenerator::readCsv(file = system.file("settings/CohortsToCreate.csv", package = "Eunomia"),
                                              warnOnCaseMismatch = FALSE)
+  
+  emptyCohortDefinition <- "{\"ConceptSets\":[],\"PrimaryCriteria\":{\"CriteriaList\":[],\"ObservationWindow\":{\"PriorDays\":0,\"PostDays\":0},\"PrimaryCriteriaLimit\":{\"Type\":\"First\"}},\"QualifiedLimit\":{\"Type\":\"First\"},\"ExpressionLimit\":{\"Type\":\"First\"},\"InclusionRules\":[],\"CensoringCriteria\":[],\"CollapseSettings\":{\"CollapseType\":\"ERA\",\"EraPad\":0},\"CensorWindow\":{}}"
   # Grab the first 3 cohorts
   eunomiaCohorts <- eunomiaCohorts[eunomiaCohorts$cohortId <= 3,]
   for (i in 1:nrow(eunomiaCohorts)) {
     cohortId <- eunomiaCohorts$cohortId[i]
     cohortName <- eunomiaCohorts$name[i]
-    cohortJson <- "{}"
+    cohortJson <- emptyCohortDefinition
     sampleCohorts <- rbind(sampleCohorts, data.frame(
       cohortId = cohortId,
       cohortName = cohortName,
