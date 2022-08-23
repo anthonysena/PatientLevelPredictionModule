@@ -121,11 +121,11 @@ createCohortDefinitionSetFromJobContext <- function(sharedResources) {
   length(cohortDefinitionSet) <- length(cohortDefinitions)
   for(i in 1:length(cohortDefinitions)){
     cohortDefinitionSet[[i]] <- list(
-      id = bit64::as.integer64(cohortDefinitions[[i]]$cohortId),
+      id = as.integer(cohortDefinitions[[i]]$cohortId),
       name = cohortDefinitions[[i]]$cohortName,
       expression = cohortDefinitions[[i]]$cohortDefinition,
       cohortName = cohortDefinitions[[i]]$cohortName,
-      cohortId = bit64::as.integer64(cohortDefinitions[[i]]$cohortId),
+      cohortId = as.integer(cohortDefinitions[[i]]$cohortId),
       cohortDefinition = cohortDefinitions[[i]]$cohortDefinition
     )
   }
