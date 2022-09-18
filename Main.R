@@ -20,6 +20,45 @@ getModuleInfo <- function() {
   return(ParallelLogger::loadSettingsFromJson("MetaData.json"))
 }
 
+getSharedResourceByClassName <- function(sharedResources, className) {
+  returnVal <- NULL
+  for (i in 1:length(sharedResources)) {
+    if (className %in% class(sharedResources[[i]])) {
+      returnVal <- sharedResources[[i]]
+      break
+    }
+  }
+  invisible(returnVal)
+}
+
+createCohortDefinitionSetFromJobContext <- function(sharedResources, settings) {
+  cohortDefinitions <- list()
+  if (length(sharedResources) <= 0) {
+    stop("No shared resources found")
+  }
+  cohortDefinitionSharedResource <- getSharedResourceByClassName(sharedResources = sharedResources, 
+                                                                 class = "CohortDefinitionSharedResources")
+  if (is.null(cohortDefinitionSharedResource)) {
+    stop("Cohort definition shared resource not found!")
+  }
+  cohortDefinitions <- cohortDefinitionSharedResource$cohortDefinitions
+  if (length(cohortDefinitions) <= 0) {
+    stop("No cohort definitions found")
+  }
+  cohortDefinitionSet <- CohortGenerator::createEmptyCohortDefinitionSet()
+  for (i in 1:length(cohortDefinitions)) {
+    cohortJson <- cohortDefinitions[[i]]$cohortDefinition
+    cohortDefinitionSet <- rbind(cohortDefinitionSet, data.frame(
+      cohortId = as.integer(cohortDefinitions[[i]]$cohortId),
+      cohortName = cohortDefinitions[[i]]$cohortName,
+      json = cohortJson,
+      stringsAsFactors = FALSE
+    ))
+  }
+  return(cohortDefinitionSet)
+}
+
+# Module methods -------------------------
 execute <- function(jobContext) {
   rlang::inform("Validating inputs")
   inherits(jobContext, 'list')
@@ -34,6 +73,7 @@ execute <- function(jobContext) {
     stop("Execution settings not found in job context")
   }
   
+  workFolder <- jobContext$moduleExecutionSettings$workSubFolder
   resultsFolder <- jobContext$moduleExecutionSettings$resultsSubFolder
   
   rlang::inform("Executing PLP")
@@ -44,29 +84,34 @@ execute <- function(jobContext) {
     connectionDetails = jobContext$moduleExecutionSettings$connectionDetails, 
     cdmDatabaseSchema = jobContext$moduleExecutionSettings$cdmDatabaseSchema,
     cohortDatabaseSchema = jobContext$moduleExecutionSettings$workDatabaseSchema,
-    cdmDatabaseName = jobContext$moduleExecutionSettings$connectionDetailsReference, 
+    cdmDatabaseName = jobContext$moduleExecutionSettings$connectionDetailsReference,
+    cdmDatabaseId = jobContext$moduleExecutionSettings$databaseId,
+    #tempEmulationSchema =  , is there s temp schema specified anywhere?
     cohortTable = jobContext$moduleExecutionSettings$cohortTableNames$cohortTable, 
     outcomeDatabaseSchema = jobContext$moduleExecutionSettings$workDatabaseSchema, 
     outcomeTable = jobContext$moduleExecutionSettings$cohortTableNames$cohortTable
   )
   
-  rlang::inform("Creating cohort definition set from job context")
-  cohortDefinitionSet <- createCohortDefinitionSetFromJobContext(sharedResources = jobContext$sharedResources)
-  
+  # find where cohortDefinitions are as sharedResources is a list
+  cohortDefinitionSet <- createCohortDefinitionSetFromJobContext(
+    sharedResources = jobContext$sharedResources,
+    settings = jobContext$settings
+    )
+             
   # run the models
   PatientLevelPrediction::runMultiplePlp(
     databaseDetails = databaseDetails, 
     modelDesignList = jobContext$settings, 
     cohortDefinitions = cohortDefinitionSet,
-    saveDirectory = resultsFolder
-  )
+    saveDirectory = workFolder
+      )
   
   # Export the results
   rlang::inform("Export data to csv files")
 
   sqliteConnectionDetails <- DatabaseConnector::createConnectionDetails(
     dbms = 'sqlite',
-    server = file.path(resultsFolder, "sqlite","databaseFile.sqlite")
+    server = file.path(workFolder, "sqlite","databaseFile.sqlite")
   )
     
   PatientLevelPrediction::extractDatabaseToCsv(
@@ -77,15 +122,22 @@ execute <- function(jobContext) {
       targetDialect = 'sqlite', 
       tempEmulationSchema = NULL
     ), 
-    csvFolder = file.path(resultsFolder, 'results'),
-    fileAppend = moduleInfo$TablePrefix
+    csvFolder = file.path(workFolder, 'results'),
+    fileAppend = 'plp_'
   )
   
   # Export the resultsDataModelSpecification.csv
-  resultsDataModel <- CohortGenerator::readCsv(file = "resultsDataModelSpecification.csv",
-                                               warnOnCaseMismatch = FALSE)
-  newTableNames <- paste0(moduleInfo$TablePrefix, resultsDataModel$tableName)
-  resultsDataModel$tableName <- newTableNames
+  resultsDataModel <- CohortGenerator::readCsv(
+    file = system.file(
+      "settings/resultsDataModelSpecification.csv",
+      package = "PatientLevelPrediction"
+    ),
+    warnOnCaseMismatch = FALSE
+  )
+  
+  # add the prefix to the tableName column
+  resultsDataModel$tableName <- paste0(moduleInfo$TablePrefix, resultsDataModel$tableName)
+  
   CohortGenerator::writeCsv(
     x = resultsDataModel,
     file = file.path(resultsFolder, "resultsDataModelSpecification.csv"),
@@ -98,37 +150,8 @@ execute <- function(jobContext) {
   rlang::inform("Zipping csv files")
   DatabaseConnector::createZipFile(
     zipFile = file.path(resultsFolder, 'results.zip'),
-    files = file.path(resultsFolder)
+    files = file.path(workFolder, 'results')
   )
-}
-
-# Private methods -------------------------
-createCohortDefinitionSetFromJobContext <- function(sharedResources) {
-  cohortDefinitions <- list()
-  if (length(sharedResources) <= 0) {
-    stop("No shared resources found")
-  }
-  for (i in 1:length(sharedResources)) {
-    if (which(class(sharedResources[[i]]) %in% "CohortDefinitionSharedResources") > 0) {
-      cohortDefinitions <- sharedResources[[i]]$cohortDefinitions
-      break;
-    }
-  }
-  if (length(cohortDefinitions) <= 0) {
-    stop("No cohort definitions found")
-  }
-  cohortDefinitionSet <- list()
-  length(cohortDefinitionSet) <- length(cohortDefinitions)
-  for(i in 1:length(cohortDefinitions)){
-    cohortDefinitionSet[[i]] <- list(
-      id = as.integer(cohortDefinitions[[i]]$cohortId),
-      name = cohortDefinitions[[i]]$cohortName,
-      expression = cohortDefinitions[[i]]$cohortDefinition,
-      cohortName = cohortDefinitions[[i]]$cohortName,
-      cohortId = as.integer(cohortDefinitions[[i]]$cohortId),
-      cohortDefinition = cohortDefinitions[[i]]$cohortDefinition
-    )
-  }
   
-  return(cohortDefinitionSet)
+  
 }
