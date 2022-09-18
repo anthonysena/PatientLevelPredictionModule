@@ -122,7 +122,7 @@ execute <- function(jobContext) {
       targetDialect = 'sqlite', 
       tempEmulationSchema = NULL
     ), 
-    csvFolder = file.path(workFolder, 'results'),
+    csvFolder = resultsFolder,
     fileAppend = 'plp_'
   )
   

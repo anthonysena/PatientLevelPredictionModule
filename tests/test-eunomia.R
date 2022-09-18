@@ -17,7 +17,7 @@ test_that("Run module", {
   #debugonce(execute)
   execute(jobContext)
   resultsFiles <- list.files(resultsfolder)
-  expect_true("cg_cohort_definition.csv" %in% resultsFiles)
+  expect_true("plp_cohort_definition.csv" %in% resultsFiles)
 })
 
 unlink(workFolder)
